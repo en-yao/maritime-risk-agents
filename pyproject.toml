@@ -1,0 +1,48 @@
+[project]
+name = "maritime-risk-agents"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "strands-agents",
+    "strands-agents-bedrock",
+    "bedrock-agentcore",
+    "pydantic>=2.0",
+    "httpx",
+    "feedparser",
+    "searoute",
+    "structlog",
+    "ddtrace",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = [
+    "structlog",
+    "structlog.*",
+    "ddtrace",
+    "ddtrace.*",
+    "feedparser",
+    "feedparser.*",
+    "searoute",
+    "searoute.*",
+    "strands",
+    "strands.*",
+    "bedrock_agentcore",
+    "bedrock_agentcore.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
