@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from predictor.schemas import (
+from maritime_risk.schemas import (
     DelayRisk,
     Port,
     RerouteOption,
