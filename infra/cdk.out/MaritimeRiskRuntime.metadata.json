@@ -1,0 +1,170 @@
+{
+  "/MaritimeRiskRuntime/ContentSafetyGuardrail": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ContentSafetyGuardrail"
+    }
+  ],
+  "/MaritimeRiskRuntime/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/MaritimeRiskRuntime/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcB9B16A3D"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcIGWDA369539"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcVPCGW76E0E89E"
+    }
+  ],
+  "/MaritimeRiskRuntime/AgentSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AgentSecurityGroupB99A59D2"
+    }
+  ],
+  "/MaritimeRiskRuntime/AgentRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AgentRoleF4A42D6B"
+    }
+  ],
+  "/MaritimeRiskRuntime/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet1Subnet20AC22C3"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet1RouteTable7CB487A2"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet1RouteTableAssociation492FC6C8"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet1DefaultRoute012330A6"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet2SubnetB0C3AD36"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet2RouteTable5787510B"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet2RouteTableAssociation14137424"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PrivateSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPrivateSubnet2DefaultRouteF7C9E287"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1SubnetAC6449A0"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1RouteTableA8B0B0D3"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1RouteTableAssociationE1AFD6EF"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1DefaultRoute6B5F69BC"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/EIP": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1EIPE584D077"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet1/NATGateway": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet1NATGateway008AA3E6"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet2Subnet3D62B3DD"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet2RouteTable08C32E00"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet2RouteTableAssociationB91723C1"
+    }
+  ],
+  "/MaritimeRiskRuntime/MaritimeRiskVpc/PublicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "MaritimeRiskVpcPublicSubnet2DefaultRoute4A1B7BAA"
+    }
+  ],
+  "/MaritimeRiskRuntime/AgentRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AgentRoleDefaultPolicy1027F5D2"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": "52.0.0",
+  "files": {
+    "78606bbbdc2eaede8d2b705c3b97f6b7e686dfcb14a44d3890e296edfd1e31bc": {
+      "displayName": "MaritimeRiskRuntime Template",
+      "source": {
+        "path": "MaritimeRiskRuntime.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "current_account-ap-southeast-1-24f6f1b1": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-ap-southeast-1",
+          "objectKey": "78606bbbdc2eaede8d2b705c3b97f6b7e686dfcb14a44d3890e296edfd1e31bc.json",
+          "region": "ap-southeast-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-ap-southeast-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

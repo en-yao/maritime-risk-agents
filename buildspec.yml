@@ -1,0 +1,17 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+      nodejs: 18
+    commands:
+      - pip install uv
+      - uv sync
+  pre_build:
+    commands:
+      - uv run ruff check src/
+      - uv run mypy src/
+      - uv run pytest tests/ -v
+  build:
+    commands:
+      - cd infra && npx cdk deploy --all --require-approval never
