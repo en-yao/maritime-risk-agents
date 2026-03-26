@@ -20,10 +20,11 @@ DATA_DIR = Path(__file__).parent / "data"
 
 # Container ships on Asia-Europe routes (Suez corridor)
 TARGET_VESSELS = [
-    {
-        "name": "Ever Given",
-        "vessel_id": "bfbe8607a-aaf2-a6fd-84b2-7a01de04cbce",
-    },
+    {"name": "Ever Given", "vessel_id": "bfbe8607a-aaf2-a6fd-84b2-7a01de04cbce"},
+    {"name": "MSC Oscar", "vessel_id": "f814ed5b4-418d-5437-d790-960428833d47"},
+    {"name": "CMA CGM Marco Polo", "vessel_id": "73f5ac167-7fd7-a051-fdbe-6d3877900f08"},
+    {"name": "OOCL Hong Kong", "vessel_id": "5e3fc3ec4-4111-1c65-2167-1e38427dc556"},
+    {"name": "Maersk Eindhoven", "vessel_id": "75bd0212b-bd08-6db2-fa10-6861bb322c62"},
 ]
 
 
