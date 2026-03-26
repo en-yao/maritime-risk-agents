@@ -4,10 +4,11 @@ Usage:
     uv run python -m eval.score
 
 Metrics:
-    - Delay prediction error (MAE) vs actual transit time
+    - Transit time prediction error (MAE) vs actual
     - Days saved vs "always continue" baseline
     - Disruption detection accuracy
     - Reroute validity
+    - Security escalation rate
 """
 from __future__ import annotations
 
@@ -55,6 +56,30 @@ def compute_actual_transit_days(shipment: dict[str, object]) -> float | None:
         return None
 
 
+def parse_json_response(response: str) -> dict[str, object] | None:
+    """Try to extract JSON from agent response."""
+    text = str(response)
+    json_start = text.find("{")
+    json_end = text.rfind("}") + 1
+    if json_start >= 0 and json_end > json_start:
+        try:
+            return json.loads(text[json_start:json_end])  # type: ignore[no-any-return]
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def has_security_escalation(response: str, parsed: dict[str, object] | None) -> bool:
+    """Check if the assessment includes a security escalation."""
+    if parsed:
+        leg_risks = parsed.get("leg_risks", [])
+        if isinstance(leg_risks, list):
+            for leg in leg_risks:
+                if isinstance(leg, dict) and leg.get("risk_level") == "escalate":
+                    return True
+    return "escalate" in response.lower() and "security" in response.lower()
+
+
 def extract_predicted_transit(response: str) -> float | None:
     """Extract predicted transit days from agent response."""
     patterns = [
@@ -67,39 +92,52 @@ def extract_predicted_transit(response: str) -> float | None:
         match = re.search(pattern, response, re.IGNORECASE)
         if match:
             val = float(match.group(1))
-            if 1 < val < 100:  # sanity check
+            if 1 < val < 100:
                 return val
     return None
 
 
-def extract_predicted_delay(response: str) -> float | None:
-    """Extract predicted delay days from agent response."""
-    patterns = [
-        r"predicted.*?delay.*?(\d+\.?\d*)\s*day",
-        r"\+(\d+\.?\d*)\s*day.*?delay",
-        r"delay.*?(\d+\.?\d*)\s*day",
-        r"\+(\d+\.?\d*)\s*day",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, response, re.IGNORECASE)
-        if match:
-            return float(match.group(1))
-    return None
+def extract_from_json(
+    parsed: dict[str, object] | None, response: str,
+) -> tuple[float | None, float | None]:
+    """Extract delay and reroute delta from parsed JSON or regex fallback."""
+    delay: float | None = None
+    reroute_delta: float | None = None
 
+    if parsed:
+        # JSON extraction
+        raw_delay = parsed.get("predicted_delay_days")
+        if isinstance(raw_delay, (int, float)) and raw_delay >= 0:
+            delay = float(raw_delay)
 
-def extract_reroute_delta(response: str) -> float | None:
-    """Extract reroute transit time delta from agent response."""
-    patterns = [
-        r"alternative.*?\+(\d+\.?\d*)\s*day",
-        r"cape.*?\+(\d+\.?\d*)\s*day",
-        r"adds?\s*(\d+\.?\d*)\s*day",
-        r"reroute.*?\+(\d+\.?\d*)\s*day",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, response, re.IGNORECASE)
-        if match:
-            return float(match.group(1))
-    return None
+        reroute_options = parsed.get("reroute_options", [])
+        if isinstance(reroute_options, list) and reroute_options:
+            first = reroute_options[0]
+            if isinstance(first, dict):
+                raw_delta = first.get("delta_vs_planned")
+                if isinstance(raw_delta, (int, float)):
+                    reroute_delta = float(raw_delta)
+    else:
+        # Regex fallback
+        for p in [
+            r"predicted.*?delay.*?(\d+\.?\d*)\s*day",
+            r"delay.*?(\d+\.?\d*)\s*day",
+        ]:
+            m = re.search(p, response, re.IGNORECASE)
+            if m:
+                delay = float(m.group(1))
+                break
+
+        for p in [
+            r"delta.*?(\d+\.?\d*)\s*day",
+            r"adds?\s*(\d+\.?\d*)\s*day",
+        ]:
+            m = re.search(p, response, re.IGNORECASE)
+            if m:
+                reroute_delta = float(m.group(1))
+                break
+
+    return delay, reroute_delta
 
 
 def score_results(results: list[dict[str, object]]) -> dict[str, object]:
@@ -112,6 +150,7 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
     delay_predictions: list[float] = []
     days_saved_list: list[float] = []
     disruptions_detected = 0
+    security_escalations = 0
     reroutes_valid = 0
     reroutes_total = 0
 
@@ -124,22 +163,28 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
         if not isinstance(shipment, dict):
             continue
 
-        # Transit time accuracy — predicted vs actual
+        parsed = parse_json_response(response)
+
+        # Check for security escalation — exclude from operational metrics
+        is_escalated = has_security_escalation(response, parsed)
+        if is_escalated:
+            security_escalations += 1
+
+        # Transit time accuracy
         actual_transit = compute_actual_transit_days(shipment)
         predicted_transit = extract_predicted_transit(response)
         if actual_transit is not None and predicted_transit is not None:
-            error = abs(predicted_transit - actual_transit)
-            transit_errors.append(error)
+            transit_errors.append(abs(predicted_transit - actual_transit))
 
-        # Delay prediction
-        predicted_delay = extract_predicted_delay(response)
-        if predicted_delay is not None:
-            delay_predictions.append(predicted_delay)
+        # Extract delay and reroute from JSON or regex
+        delay, reroute_delta = extract_from_json(parsed, response)
 
-        # Days saved — predicted delay minus reroute delta
-        reroute_delta = extract_reroute_delta(response)
-        if predicted_delay is not None and reroute_delta is not None:
-            days_saved = predicted_delay - reroute_delta
+        if delay is not None and not is_escalated:
+            delay_predictions.append(delay)
+
+        # Days saved — only for operational assessments (not security escalations)
+        if delay is not None and reroute_delta is not None and not is_escalated:
+            days_saved = delay - reroute_delta
             days_saved_list.append(days_saved)
             reroutes_total += 1
             if reroute_delta > 0:
@@ -148,15 +193,19 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
         # Disruption detection
         disruption_keywords = [
             "disruption", "delay", "storm", "closure", "strike",
-            "congestion", "attack", "restriction", "reroute",
+            "congestion", "restriction", "escalate",
         ]
         if any(kw in response.lower() for kw in disruption_keywords):
             disruptions_detected += 1
+
+    operational = successful - security_escalations
 
     summary: dict[str, object] = {
         "total_shipments": total,
         "successful_runs": successful,
         "errors": errors,
+        "security_escalations": security_escalations,
+        "operational_assessments": operational,
         "transit_predictions_matched": len(transit_errors),
         "transit_mae_days": (
             round(sum(transit_errors) / len(transit_errors), 2)

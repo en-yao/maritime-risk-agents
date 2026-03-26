@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 DATA_DIR = Path(__file__).parent / "data"
 MONTHLY_URL = "https://gcaptain.com/{year}/{month:02d}/page/{page}/"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; research-bot)"}
-MONTHS = [(2024, m) for m in range(7, 13)]  # Jul-Dec 2024
+MONTHS = [(2023, m) for m in range(10, 13)] + [(2024, m) for m in range(1, 3)]  # Oct 2023 - Feb 2024
 MAX_PAGES = 30
 
 

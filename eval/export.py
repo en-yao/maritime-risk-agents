@@ -18,12 +18,11 @@ from gfwapiclient import Client
 
 DATA_DIR = Path(__file__).parent / "data"
 
-# Vessels on Panama Canal and US East Coast routes (operational disruptions)
+# Panama Canal vessels during peak drought restrictions (Oct 2023 - Feb 2024)
 TARGET_VESSELS = [
+    {"name": "MSC Anzu", "vessel_id": "59f856214-4037-6c95-21c5-d7ad6289518e"},
     {"name": "CMA CGM Libra", "vessel_id": "697ae2768-8a0f-b9d5-e4d1-68c22a7925f8"},
-    {"name": "Maersk Hartford", "vessel_id": "00c73d546-661d-bbc5-0356-00ad430f42be"},
-    {"name": "Maersk Seletar", "vessel_id": "8272e36d2-21d4-e258-7122-7aa7bc8cff84"},
-    {"name": "Maersk Sentosa", "vessel_id": "fc20beb0a-ad6f-9004-0b87-d2b8df20b0a9"},
+    {"name": "ONE Competence", "vessel_id": "8686eee6c-c328-ee99-f675-6bd8de69155b"},
 ]
 
 
