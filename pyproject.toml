@@ -12,6 +12,7 @@ dependencies = [
     "searoute",
     "structlog",
     "ddtrace",
+    "gfw-api-python-client",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,8 @@ module = [
     "anthropic.*",
     "bedrock_agentcore",
     "bedrock_agentcore.*",
+    "gfwapiclient",
+    "gfwapiclient.*",
 ]
 ignore_missing_imports = true
 

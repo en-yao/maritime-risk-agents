@@ -1,10 +1,10 @@
-"""Score backtest results against actual arrivals.
+"""Score backtest results against actual arrivals from GFW port visit data.
 
 Usage:
     uv run python -m eval.score
 
 Metrics:
-    - Delay prediction error (MAE)
+    - Delay prediction error (MAE) vs actual transit time
     - Days saved vs "always continue" baseline
     - Disruption detection accuracy
     - Reroute validity
@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -27,9 +28,7 @@ def load_results() -> list[dict[str, object]]:
         sys.exit(1)
 
     results = []
-    for path in sorted(RESULTS_DIR.glob("*.json")):
-        if path.name == "summary.json":
-            continue
+    for path in sorted(RESULTS_DIR.glob("shipment_*.json")):
         results.append(json.loads(path.read_text()))
 
     if not results:
@@ -39,11 +38,45 @@ def load_results() -> list[dict[str, object]]:
     return results
 
 
+def compute_actual_transit_days(shipment: dict[str, object]) -> float | None:
+    """Compute actual transit days from GFW departure and arrival timestamps."""
+    departure = str(shipment.get("origin_departure", ""))
+    arrival = str(shipment.get("destination_arrival", ""))
+
+    if not departure or not arrival:
+        return None
+
+    try:
+        dep_dt = datetime.fromisoformat(departure)
+        arr_dt = datetime.fromisoformat(arrival)
+        delta = (arr_dt - dep_dt).total_seconds() / 86400.0
+        return round(delta, 1) if delta > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def extract_predicted_transit(response: str) -> float | None:
+    """Extract predicted transit days from agent response."""
+    patterns = [
+        r"(?:transit|voyage).*?(\d+\.?\d*)\s*day",
+        r"(\d+\.?\d*)\s*day.*?(?:transit|voyage)",
+        r"ETA.*?(\d+\.?\d*)\s*day",
+        r"(\d+\.?\d*)\s*days?\s*(?:from departure|total)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, response, re.IGNORECASE)
+        if match:
+            val = float(match.group(1))
+            if 1 < val < 100:  # sanity check
+                return val
+    return None
+
+
 def extract_predicted_delay(response: str) -> float | None:
-    """Extract predicted delay days from agent response text."""
+    """Extract predicted delay days from agent response."""
     patterns = [
         r"predicted.*?delay.*?(\d+\.?\d*)\s*day",
-        r"(\d+\.?\d*)\s*day.*?delay",
+        r"\+(\d+\.?\d*)\s*day.*?delay",
         r"delay.*?(\d+\.?\d*)\s*day",
         r"\+(\d+\.?\d*)\s*day",
     ]
@@ -60,6 +93,7 @@ def extract_reroute_delta(response: str) -> float | None:
         r"alternative.*?\+(\d+\.?\d*)\s*day",
         r"cape.*?\+(\d+\.?\d*)\s*day",
         r"adds?\s*(\d+\.?\d*)\s*day",
+        r"reroute.*?\+(\d+\.?\d*)\s*day",
     ]
     for pattern in patterns:
         match = re.search(pattern, response, re.IGNORECASE)
@@ -74,7 +108,8 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
     errors = sum(1 for r in results if "error" in r)
     successful = total - errors
 
-    prediction_errors: list[float] = []
+    transit_errors: list[float] = []
+    delay_predictions: list[float] = []
     days_saved_list: list[float] = []
     disruptions_detected = 0
     reroutes_valid = 0
@@ -85,13 +120,21 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
             continue
 
         response = str(result.get("agent_response", ""))
+        shipment = result.get("shipment", {})
+        if not isinstance(shipment, dict):
+            continue
 
-        # Delay prediction — extract from response
+        # Transit time accuracy — predicted vs actual
+        actual_transit = compute_actual_transit_days(shipment)
+        predicted_transit = extract_predicted_transit(response)
+        if actual_transit is not None and predicted_transit is not None:
+            error = abs(predicted_transit - actual_transit)
+            transit_errors.append(error)
+
+        # Delay prediction
         predicted_delay = extract_predicted_delay(response)
         if predicted_delay is not None:
-            # actual_delay would come from MarineTraffic arrival vs schedule
-            # For now, record the prediction for manual verification
-            prediction_errors.append(predicted_delay)
+            delay_predictions.append(predicted_delay)
 
         # Days saved — predicted delay minus reroute delta
         reroute_delta = extract_reroute_delta(response)
@@ -102,10 +145,10 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
             if reroute_delta > 0:
                 reroutes_valid += 1
 
-        # Disruption detection — check if agent found disruptions
+        # Disruption detection
         disruption_keywords = [
             "disruption", "delay", "storm", "closure", "strike",
-            "congestion", "attack", "restriction",
+            "congestion", "attack", "restriction", "reroute",
         ]
         if any(kw in response.lower() for kw in disruption_keywords):
             disruptions_detected += 1
@@ -114,10 +157,16 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
         "total_shipments": total,
         "successful_runs": successful,
         "errors": errors,
-        "predictions_extracted": len(prediction_errors),
+        "transit_predictions_matched": len(transit_errors),
+        "transit_mae_days": (
+            round(sum(transit_errors) / len(transit_errors), 2)
+            if transit_errors
+            else None
+        ),
+        "delay_predictions_extracted": len(delay_predictions),
         "avg_predicted_delay_days": (
-            round(sum(prediction_errors) / len(prediction_errors), 2)
-            if prediction_errors
+            round(sum(delay_predictions) / len(delay_predictions), 2)
+            if delay_predictions
             else None
         ),
         "reroutes_suggested": reroutes_total,
@@ -137,6 +186,7 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
             round(disruptions_detected / successful, 2) if successful > 0 else None
         ),
         "baseline": "always continue, never reroute (0 days saved)",
+        "data_source": "Global Fishing Watch port visits API (free, non-commercial)",
     }
 
     return summary

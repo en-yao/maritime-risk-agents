@@ -3,13 +3,13 @@
 Usage:
     uv run python -m eval.backtest
 
-MarineTraffic arrival times are NEVER fed to the agent — held out for scoring only.
+GFW arrival times are NEVER fed to the agent — held out for scoring only.
 """
 from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from maritime_risk.orchestrator import create_orchestrator
@@ -19,51 +19,61 @@ RESULTS_DIR = DATA_DIR / "results"
 
 
 def load_shipments() -> list[dict[str, object]]:
-    """Load port call records and group into shipments."""
-    port_calls_path = DATA_DIR / "port_calls.json"
-    if not port_calls_path.exists():
-        print("Error: Run eval.export first to generate port_calls.json", file=sys.stderr)
+    """Load port visit records and build shipment pairs (consecutive port visits).
+
+    Each shipment = departure from port A → arrival at port B.
+    """
+    port_visits_path = DATA_DIR / "port_visits.json"
+    if not port_visits_path.exists():
+        print("Error: Run eval.export first to generate port_visits.json", file=sys.stderr)
         sys.exit(1)
 
-    records = json.loads(port_calls_path.read_text())
+    visits = json.loads(port_visits_path.read_text())
 
-    shipments: dict[str, dict[str, object]] = {}
-    for record in records:
-        vessel_id = record.get("MMSI", record.get("IMO", "unknown"))
-        if vessel_id not in shipments:
-            shipments[vessel_id] = {
-                "vessel_id": vessel_id,
-                "port_calls": [],
-                "departure_date": record.get("TIMESTAMP_UTC", ""),
-            }
-        calls = shipments[vessel_id]["port_calls"]
-        if isinstance(calls, list):
-            calls.append(record)
+    # Group by vessel, sort by start time
+    by_vessel: dict[str, list[dict[str, object]]] = {}
+    for visit in visits:
+        vid = str(visit.get("vessel_id", "unknown"))
+        if vid not in by_vessel:
+            by_vessel[vid] = []
+        by_vessel[vid].append(visit)
 
-    return list(shipments.values())
+    for vid in by_vessel:
+        by_vessel[vid].sort(key=lambda v: str(v.get("start", "")))
+
+    # Build shipments from consecutive port visits
+    shipments: list[dict[str, object]] = []
+    for vid, vessel_visits in by_vessel.items():
+        vessel_name = str(vessel_visits[0].get("vessel_name", "Unknown"))
+        for i in range(len(vessel_visits) - 1):
+            origin = vessel_visits[i]
+            destination = vessel_visits[i + 1]
+
+            shipments.append({
+                "vessel_id": vid,
+                "vessel_name": vessel_name,
+                "origin_position": str(origin.get("position", "")),
+                "origin_departure": str(origin.get("end", "")),
+                "destination_position": str(destination.get("position", "")),
+                "destination_arrival": str(destination.get("start", "")),
+            })
+
+    return shipments
 
 
 def build_prompt(shipment: dict[str, object]) -> str:
     """Build agent prompt from shipment data. Excludes arrival times (held out)."""
-    port_calls = shipment.get("port_calls", [])
-    if not port_calls or not isinstance(port_calls, list):
-        return ""
-
-    ports = []
-    for pc in port_calls:
-        if isinstance(pc, dict):
-            port_name = pc.get("PORT_NAME", pc.get("port_name", "Unknown"))
-            ports.append(str(port_name))
-
-    if len(ports) < 2:
-        return ""
-
-    origin = ports[0]
-    destination = ports[-1]
-    departure = str(shipment.get("departure_date", ""))
+    origin_pos = str(shipment.get("origin_position", ""))
+    dest_pos = str(shipment.get("destination_position", ""))
+    departure = str(shipment.get("origin_departure", ""))
+    vessel_name = str(shipment.get("vessel_name", ""))
     date_str = departure[:10] if departure else "unknown date"
 
-    return f"Assess delay risk for shipment from {origin} to {destination}, departing {date_str}"
+    return (
+        f"Assess delay risk for {vessel_name} departing {date_str}. "
+        f"Origin coordinates: {origin_pos}. "
+        f"Destination coordinates: {dest_pos}."
+    )
 
 
 def run_backtest() -> None:
@@ -77,30 +87,37 @@ def run_backtest() -> None:
     for i, shipment in enumerate(shipments):
         prompt = build_prompt(shipment)
         if not prompt:
-            print(f"  [{i + 1}/{len(shipments)}] Skipping — insufficient port call data")
+            print(f"  [{i + 1}/{len(shipments)}] Skipping — insufficient data")
             continue
 
         print(f"  [{i + 1}/{len(shipments)}] {prompt[:80]}...")
 
         try:
             result = agent(prompt)
+            response = result.message
+            if isinstance(response, dict):
+                content = response.get("content", [])
+                for block in content:
+                    if isinstance(block, dict) and "text" in block:
+                        response = block["text"]
+                        break
+
             prediction = {
                 "shipment": shipment,
                 "prompt": prompt,
-                "agent_response": result.message,
-                "timestamp": datetime.utcnow().isoformat(),
+                "agent_response": response,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
             prediction = {
                 "shipment": shipment,
                 "prompt": prompt,
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             print(f"    Error: {e}")
 
-        vessel_id = shipment.get("vessel_id", f"ship_{i}")
-        result_path = RESULTS_DIR / f"{vessel_id}.json"
+        result_path = RESULTS_DIR / f"shipment_{i:03d}.json"
         result_path.write_text(json.dumps(prediction, indent=2, default=str))
 
     print(f"Backtest complete. Results in {RESULTS_DIR}")
