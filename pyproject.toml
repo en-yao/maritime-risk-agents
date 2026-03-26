@@ -13,6 +13,7 @@ dependencies = [
     "structlog",
     "ddtrace",
     "gfw-api-python-client",
+    "gdeltdoc",
 ]
 
 [project.optional-dependencies]
