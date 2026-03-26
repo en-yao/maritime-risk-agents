@@ -3,13 +3,17 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import json
+
 import structlog
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from pydantic import ValidationError
 from strands import Agent
 from strands.models import AnthropicModel
 
 from maritime_risk.agents.news import search_maritime_news
 from maritime_risk.agents.routes import calculate_alternative_route, calculate_route
+from maritime_risk.schemas import ShipmentAssessment
 from maritime_risk.tools.weather import check_weather
 
 logger = structlog.get_logger()
@@ -18,21 +22,31 @@ SYSTEM_PROMPT = """\
 You are a maritime shipping risk assessor. Given a shipment origin and \
 destination, assess delay risk and suggest reroutes if warranted.
 
-Follow this reasoning loop — do NOT execute all steps for every shipment:
+Follow this reasoning loop:
 
-1. Call calculate_route to get the planned route geometry and legs.
-2. For each leg, decide which signals to check:
-   - Call search_maritime_news with the region/ports relevant to that leg.
-   - If news returns a disruption, call check_weather for that region too.
-   - If news is clean, skip weather for that leg.
-3. Combine all signals. If compound risk is high, call \
-calculate_alternative_route to get alternatives avoiding the affected passages.
-4. Output a structured assessment with risk per leg, reroute options (if any), \
-recommendation, and confidence. Cite evidence for every factor.
+1. Call calculate_route to get the planned route geometry and distance.
+2. For routes >5000nm between Europe and Asia, ALWAYS check Suez Canal \
+and Red Sea specifically — these are critical chokepoints.
+3. For each leg, check search_maritime_news with the region/ports relevant \
+to that leg. Also call check_weather for key waypoints.
+4. For each leg, estimate the expected delay in days (not just a risk level). \
+Use evidence from news and weather to justify the estimate.
+5. If ANY leg has disruption signals, ALWAYS call calculate_alternative_route \
+for comparison — even if you ultimately recommend proceeding. Show the \
+transit time delta so the user can decide.
+6. Output a structured assessment as JSON with this format:
+{
+  "shipment_id": "<vessel_name>_<departure_date>",
+  "overall_risk": "low" | "medium" | "high",
+  "predicted_delay_days": <number>,
+  "leg_risks": [{"leg": "<origin> to <destination>", "risk_level": "low"|"medium"|"high", "delay_days_estimate": <number>, "confidence": <0-1>, "factors": ["<evidence>"]}],
+  "reroute_options": [{"route": "<description>", "transit_days": <number>, "delta_vs_planned": <number>, "residual_risk": "low"|"medium"|"high", "rationale": "<why>"}],
+  "recommendation": "<proceed|reroute|hold>: <explanation>",
+  "confidence": <0-1>
+}
 
 Do NOT hallucinate data. If a source returns no results, report that \
-explicitly. Only recommend reroutes when the risk justifies the added \
-transit time.\
+explicitly. Cite evidence for every factor.\
 """
 
 
@@ -75,8 +89,30 @@ def _build_app() -> BedrockAgentCoreApp:
         logger.info("assessment_request", prompt_preview=prompt[:80])
         agent = create_orchestrator()
         result = agent(prompt)
-        logger.info("assessment_complete")
-        return {"assessment": result.message}
+
+        # Extract text from agent response
+        message = result.message
+        if isinstance(message, dict):
+            for block in message.get("content", []):
+                if isinstance(block, dict) and "text" in block:
+                    message = block["text"]
+                    break
+
+        # Validate against schema if JSON output
+        try:
+            text = str(message)
+            json_start = text.find("{")
+            json_end = text.rfind("}") + 1
+            if json_start >= 0 and json_end > json_start:
+                parsed = json.loads(text[json_start:json_end])
+                assessment = ShipmentAssessment.model_validate(parsed)
+                logger.info("assessment_complete", validated=True)
+                return {"assessment": assessment.model_dump()}
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.warning("assessment_validation_failed", error=str(e))
+
+        logger.info("assessment_complete", validated=False)
+        return {"assessment": message}
 
     return app
 
