@@ -90,6 +90,10 @@ def calculate_route(origin_port: str, destination_port: str) -> str:
 
     route = sr.searoute(origin_coords, dest_coords, units="nm")
     distance_nm = route["properties"]["length"]
+
+    if distance_nm <= 0:
+        return json.dumps({"error": f"No viable route between {origin_port} and {destination_port}"})
+
     transit_days = _transit_days(distance_nm)
 
     return json.dumps({
@@ -129,6 +133,14 @@ def calculate_alternative_route(
         origin_coords, dest_coords, units="nm", restrictions=restrictions,
     )
     alt_nm = alternative["properties"]["length"]
+
+    if alt_nm <= 0:
+        return json.dumps({
+            "error": f"No viable alternative route found avoiding {restrictions}",
+            "origin": origin_port,
+            "destination": destination_port,
+        })
+
     alt_days = _transit_days(alt_nm)
     delta_days = round(alt_days - _transit_days(standard_nm), 1)
 
