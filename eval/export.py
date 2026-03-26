@@ -18,13 +18,12 @@ from gfwapiclient import Client
 
 DATA_DIR = Path(__file__).parent / "data"
 
-# Container ships on Asia-Europe routes (Suez corridor)
+# Vessels on Panama Canal and US East Coast routes (operational disruptions)
 TARGET_VESSELS = [
-    {"name": "Ever Given", "vessel_id": "bfbe8607a-aaf2-a6fd-84b2-7a01de04cbce"},
-    {"name": "MSC Oscar", "vessel_id": "f814ed5b4-418d-5437-d790-960428833d47"},
-    {"name": "CMA CGM Marco Polo", "vessel_id": "73f5ac167-7fd7-a051-fdbe-6d3877900f08"},
-    {"name": "OOCL Hong Kong", "vessel_id": "5e3fc3ec4-4111-1c65-2167-1e38427dc556"},
-    {"name": "Maersk Eindhoven", "vessel_id": "75bd0212b-bd08-6db2-fa10-6861bb322c62"},
+    {"name": "CMA CGM Libra", "vessel_id": "697ae2768-8a0f-b9d5-e4d1-68c22a7925f8"},
+    {"name": "Maersk Hartford", "vessel_id": "00c73d546-661d-bbc5-0356-00ad430f42be"},
+    {"name": "Maersk Seletar", "vessel_id": "8272e36d2-21d4-e258-7122-7aa7bc8cff84"},
+    {"name": "Maersk Sentosa", "vessel_id": "fc20beb0a-ad6f-9004-0b87-d2b8df20b0a9"},
 ]
 
 
