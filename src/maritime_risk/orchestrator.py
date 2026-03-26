@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import os
-from typing import Any
-
 import json
+import os
 
 import structlog
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from pydantic import ValidationError
 from strands import Agent
+from strands.hooks import HookProvider
 from strands.models import AnthropicModel
 
 from maritime_risk.agents.news import search_maritime_news
@@ -87,12 +86,15 @@ def _create_model() -> AnthropicModel:
     )
 
 
-def create_orchestrator() -> Agent:
+def create_orchestrator(
+    hooks: list[HookProvider] | None = None,
+) -> Agent:
     """Create the maritime risk orchestrator agent."""
     return Agent(
         tools=[search_maritime_news, calculate_route, calculate_alternative_route, check_weather],
         model=_create_model(),
         system_prompt=SYSTEM_PROMPT,
+        hooks=hooks or [],
     )
 
 
@@ -120,16 +122,16 @@ def _build_app() -> BedrockAgentCoreApp:
         result = agent(prompt)
 
         # Extract text from agent response
-        message = result.message
-        if isinstance(message, dict):
-            for block in message.get("content", []):
+        raw_message: object = result.message
+        if isinstance(raw_message, dict):
+            for block in raw_message.get("content", []):
                 if isinstance(block, dict) and "text" in block:
-                    message = block["text"]
+                    raw_message = block["text"]
                     break
 
         # Validate against schema if JSON output
         try:
-            text = str(message)
+            text = str(raw_message)
             json_start = text.find("{")
             json_end = text.rfind("}") + 1
             if json_start >= 0 and json_end > json_start:
@@ -141,7 +143,7 @@ def _build_app() -> BedrockAgentCoreApp:
             logger.warning("assessment_validation_failed", error=str(e))
 
         logger.info("assessment_complete", validated=False)
-        return {"assessment": message}
+        return {"assessment": raw_message}
 
     return app
 

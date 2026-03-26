@@ -6,6 +6,7 @@ Usage:
 
 GFW arrival times are NEVER fed to the agent — held out for scoring only.
 News feed is served via local RSS server with ?before= date cutoff.
+Tool calls are traced via Strands hooks and saved alongside agent responses.
 """
 from __future__ import annotations
 
@@ -13,13 +14,58 @@ import json
 import math
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
 from maritime_risk.orchestrator import create_orchestrator
 
 DATA_DIR = Path(__file__).parent / "data"
 RESULTS_DIR = DATA_DIR / "results"
+
+
+class ToolTracer(HookProvider):
+    """Captures tool call traces during agent execution."""
+
+    def __init__(self) -> None:
+        self.traces: list[dict[str, Any]] = []
+        self._pending_start: dict[str, float] = {}
+
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        registry.add_callback(BeforeToolCallEvent, self._on_before)
+        registry.add_callback(AfterToolCallEvent, self._on_after)
+
+    def _on_before(self, event: BeforeToolCallEvent) -> None:
+        tool_use_id = event.tool_use.get("toolUseId", "")
+        self._pending_start[tool_use_id] = time.monotonic()
+
+    def _on_after(self, event: AfterToolCallEvent) -> None:
+        tool_use_id = event.tool_use.get("toolUseId", "")
+        start = self._pending_start.pop(tool_use_id, None)
+        duration_ms = round((time.monotonic() - start) * 1000) if start else None
+
+        result_text: str | None = None
+        if event.result:
+            for block in event.result.get("content", []):
+                if isinstance(block, dict) and "text" in block:
+                    result_text = block["text"]
+                    break
+
+        self.traces.append({
+            "tool": event.tool_use.get("name", ""),
+            "input": event.tool_use.get("input", {}),
+            "status": event.result.get("status", "unknown") if event.result else "error",
+            "result_preview": result_text[:500] if result_text else None,
+            "duration_ms": duration_ms,
+            "error": str(event.exception) if event.exception else None,
+        })
+
+    def reset(self) -> None:
+        self.traces.clear()
+        self._pending_start.clear()
 
 
 def load_shipments() -> list[dict[str, object]]:
@@ -111,6 +157,7 @@ def run_backtest() -> None:
     print(f"News server: {news_base}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    tracer = ToolTracer()
 
     for i, shipment in enumerate(shipments):
         prompt = build_prompt(shipment)
@@ -123,24 +170,27 @@ def run_backtest() -> None:
         os.environ["NEWS_RSS_FEEDS"] = f"{news_base}?before={departure}"
 
         # Create fresh agent per shipment to pick up new feed URL
-        agent = create_orchestrator()
+        tracer.reset()
+        agent = create_orchestrator(hooks=[tracer])
 
         print(f"  [{i + 1}/{len(shipments)}] {prompt[:80]}...")
 
         try:
             result = agent(prompt)
-            response = result.message
-            if isinstance(response, dict):
-                content = response.get("content", [])
+            raw_message = result.message
+            response_text: object = raw_message
+            if isinstance(raw_message, dict):
+                content = raw_message.get("content", [])
                 for block in content:
                     if isinstance(block, dict) and "text" in block:
-                        response = block["text"]
+                        response_text = block["text"]
                         break
 
-            prediction = {
+            prediction: dict[str, object] = {
                 "shipment": shipment,
                 "prompt": prompt,
-                "agent_response": response,
+                "agent_response": response_text,
+                "tool_trace": tracer.traces.copy(),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
@@ -148,6 +198,7 @@ def run_backtest() -> None:
                 "shipment": shipment,
                 "prompt": prompt,
                 "error": str(e),
+                "tool_trace": tracer.traces.copy(),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             print(f"    Error: {e}")
