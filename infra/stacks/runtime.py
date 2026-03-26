@@ -1,11 +1,8 @@
 from aws_cdk import (
-    RemovalPolicy,
     Stack,
     aws_bedrock as bedrock,
     aws_ec2 as ec2,
     aws_iam as iam,
-    aws_s3 as s3,
-    aws_s3_deployment as s3_deploy,
 )
 from constructs import Construct
 
@@ -77,30 +74,6 @@ class RuntimeStack(Stack):
                     secrets.dd_api_key.secret_arn,
                     secrets.marinetraffic_api_key.secret_arn,
                 ],
-            )
-        )
-
-        # --- S3 Reference Data ---
-        data_bucket = s3.Bucket(
-            self,
-            "ReferenceDataBucket",
-            bucket_name=f"maritime-risk-data-{self.account}",
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True,
-        )
-
-        s3_deploy.BucketDeployment(
-            self,
-            "PortDataDeployment",
-            sources=[s3_deploy.Source.asset("../data")],
-            destination_bucket=data_bucket,
-            destination_key_prefix="ports",
-        )
-
-        agent_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["s3:GetObject"],
-                resources=[data_bucket.arn_for_objects("*")],
             )
         )
 
