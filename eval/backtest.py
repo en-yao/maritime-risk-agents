@@ -1,9 +1,11 @@
 """Run backtest: agent assesses historical shipments with data cutoff enforced.
 
 Usage:
-    uv run python -m eval.backtest
+    1. Start news server: uv run python -m eval.news_server
+    2. Run backtest:      uv run python -m eval.backtest
 
 GFW arrival times are NEVER fed to the agent — held out for scoring only.
+News feed is served via local RSS server with ?before= date cutoff.
 """
 from __future__ import annotations
 
@@ -96,18 +98,32 @@ def build_prompt(shipment: dict[str, object]) -> str:
 
 
 def run_backtest() -> None:
-    """Run the orchestrator against each historical shipment."""
+    """Run the orchestrator against each historical shipment.
+
+    Requires eval/news_server.py running on localhost:8765.
+    Each shipment sets NEWS_RSS_FEEDS with ?before= to enforce data cutoff.
+    """
+    news_port = os.environ.get("NEWS_SERVER_PORT", "8765")
+    news_base = f"http://localhost:{news_port}/feed"
+
     shipments = load_shipments()
     print(f"Loaded {len(shipments)} shipments for backtest")
+    print(f"News server: {news_base}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    agent = create_orchestrator()
 
     for i, shipment in enumerate(shipments):
         prompt = build_prompt(shipment)
         if not prompt:
             print(f"  [{i + 1}/{len(shipments)}] Skipping — insufficient data")
             continue
+
+        # Set news feed URL with data cutoff for this shipment's departure date
+        departure = str(shipment.get("origin_departure", ""))[:10]
+        os.environ["NEWS_RSS_FEEDS"] = f"{news_base}?before={departure}"
+
+        # Create fresh agent per shipment to pick up new feed URL
+        agent = create_orchestrator()
 
         print(f"  [{i + 1}/{len(shipments)}] {prompt[:80]}...")
 
