@@ -8,6 +8,8 @@ GFW arrival times are NEVER fed to the agent — held out for scoring only.
 from __future__ import annotations
 
 import json
+import math
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,7 +43,8 @@ def load_shipments() -> list[dict[str, object]]:
     for vid in by_vessel:
         by_vessel[vid].sort(key=lambda v: str(v.get("start", "")))
 
-    # Build shipments from consecutive port visits
+    # Build shipments from consecutive port visits, filter short legs
+    min_distance_nm = float(os.environ.get("BACKTEST_MIN_NM", "500"))
     shipments: list[dict[str, object]] = []
     for vid, vessel_visits in by_vessel.items():
         vessel_name = str(vessel_visits[0].get("vessel_name", "Unknown"))
@@ -49,13 +52,29 @@ def load_shipments() -> list[dict[str, object]]:
             origin = vessel_visits[i]
             destination = vessel_visits[i + 1]
 
+            # Compute rough distance to filter short legs
+            o_pos = str(origin.get("position", ""))
+            d_pos = str(destination.get("position", ""))
+            try:
+                o_lat = float(o_pos.split("lat=")[1].split(" ")[0])
+                o_lon = float(o_pos.split("lon=")[1])
+                d_lat = float(d_pos.split("lat=")[1].split(" ")[0])
+                d_lon = float(d_pos.split("lon=")[1])
+                rough_nm = math.sqrt((o_lat - d_lat) ** 2 + (o_lon - d_lon) ** 2) * 60
+            except (ValueError, IndexError):
+                rough_nm = 0
+
+            if rough_nm < min_distance_nm:
+                continue
+
             shipments.append({
                 "vessel_id": vid,
                 "vessel_name": vessel_name,
-                "origin_position": str(origin.get("position", "")),
+                "origin_position": o_pos,
                 "origin_departure": str(origin.get("end", "")),
-                "destination_position": str(destination.get("position", "")),
+                "destination_position": d_pos,
                 "destination_arrival": str(destination.get("start", "")),
+                "rough_distance_nm": round(rough_nm),
             })
 
     return shipments
