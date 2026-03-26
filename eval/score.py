@@ -147,7 +147,8 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
     successful = total - errors
 
     transit_errors: list[float] = []
-    delay_predictions: list[float] = []
+    prediction_errors: list[float] = []
+    actual_delays: list[float] = []
     days_saved_list: list[float] = []
     disruptions_detected = 0
     security_escalations = 0
@@ -170,25 +171,38 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
         if is_escalated:
             security_escalations += 1
 
-        # Transit time accuracy
+        # Transit time: predicted vs actual
         actual_transit = compute_actual_transit_days(shipment)
         predicted_transit = extract_predicted_transit(response)
         if actual_transit is not None and predicted_transit is not None:
             transit_errors.append(abs(predicted_transit - actual_transit))
 
-        # Extract delay and reroute from JSON or regex
-        delay, reroute_delta = extract_from_json(parsed, response)
+        # Actual delay: actual transit - searoute baseline
+        # Baseline transit is the predicted transit from the agent (which uses searoute)
+        actual_delay: float | None = None
+        if actual_transit is not None and predicted_transit is not None:
+            actual_delay = max(0, actual_transit - predicted_transit)
 
-        if delay is not None and not is_escalated:
-            delay_predictions.append(delay)
+        # Prediction accuracy: predicted delay vs actual delay
+        predicted_delay, reroute_delta = extract_from_json(parsed, response)
+        if predicted_delay is not None and actual_delay is not None and not is_escalated:
+            prediction_errors.append(abs(predicted_delay - actual_delay))
 
-        # Days saved — only for operational assessments (not security escalations)
-        if delay is not None and reroute_delta is not None and not is_escalated:
-            days_saved = delay - reroute_delta
-            days_saved_list.append(days_saved)
-            reroutes_total += 1
-            if reroute_delta > 0:
+        if actual_delay is not None and not is_escalated:
+            actual_delays.append(actual_delay)
+
+        # Days saved — grounded in actual delay, not predicted delay
+        # Assumption: alternative route has no delay (stated limitation)
+        # Only count when: reroute has positive delta AND is not a failed calculation
+        if actual_delay is not None and reroute_delta is not None and not is_escalated:
+            if reroute_delta > 0:  # valid reroute with positive transit cost
+                days_saved = actual_delay - reroute_delta
+                days_saved_list.append(days_saved)
+                reroutes_total += 1
                 reroutes_valid += 1
+            elif reroute_delta == 0:
+                # Invalid reroute (same route or tool failure) — skip
+                reroutes_total += 1
 
         # Disruption detection
         disruption_keywords = [
@@ -212,10 +226,14 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
             if transit_errors
             else None
         ),
-        "delay_predictions_extracted": len(delay_predictions),
-        "avg_predicted_delay_days": (
-            round(sum(delay_predictions) / len(delay_predictions), 2)
-            if delay_predictions
+        "avg_actual_delay_days": (
+            round(sum(actual_delays) / len(actual_delays), 2)
+            if actual_delays
+            else None
+        ),
+        "delay_prediction_mae_days": (
+            round(sum(prediction_errors) / len(prediction_errors), 2)
+            if prediction_errors
             else None
         ),
         "reroutes_suggested": reroutes_total,
@@ -235,6 +253,7 @@ def score_results(results: list[dict[str, object]]) -> dict[str, object]:
             round(disruptions_detected / successful, 2) if successful > 0 else None
         ),
         "baseline": "always continue, never reroute (0 days saved)",
+        "days_saved_note": "actual_delay - reroute_delta. Assumes alternative route has no delay (stated limitation).",
         "data_source": "Global Fishing Watch port visits API (free, non-commercial)",
     }
 
