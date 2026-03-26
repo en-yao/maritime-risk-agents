@@ -6,7 +6,7 @@ from typing import Any
 import structlog
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent
-from strands.models import BedrockModel
+from strands.models import AnthropicModel
 
 from maritime_risk.agents.news import search_maritime_news
 from maritime_risk.agents.routes import calculate_alternative_route, calculate_route
@@ -36,20 +36,12 @@ transit time.\
 """
 
 
-def _create_model() -> BedrockModel:
-    """Create Bedrock model with optional guardrails."""
-    kwargs: dict[str, Any] = {
-        "model_id": os.environ.get(
-            "BEDROCK_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-        ),
-        "region_name": os.environ.get("AWS_REGION", "ap-southeast-1"),
-        "max_tokens": int(os.environ.get("BEDROCK_MAX_TOKENS", "2048")),
-    }
-    guardrail_id = os.environ.get("GUARDRAIL_ID")
-    if guardrail_id:
-        kwargs["guardrail_id"] = guardrail_id
-        kwargs["guardrail_version"] = os.environ.get("GUARDRAIL_VERSION", "DRAFT")
-    return BedrockModel(**kwargs)
+def _create_model() -> AnthropicModel:
+    """Create Anthropic model."""
+    return AnthropicModel(
+        model_id=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"),
+        max_tokens=int(os.environ.get("ANTHROPIC_MAX_TOKENS", "2048")),
+    )
 
 
 def create_orchestrator() -> Agent:

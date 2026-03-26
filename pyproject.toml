@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "strands-agents",
-    "strands-agents-bedrock",
+    "anthropic",
     "bedrock-agentcore",
     "pydantic>=2.0",
     "httpx",
@@ -39,6 +39,8 @@ module = [
     "searoute.*",
     "strands",
     "strands.*",
+    "anthropic",
+    "anthropic.*",
     "bedrock_agentcore",
     "bedrock_agentcore.*",
 ]
