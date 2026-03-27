@@ -5,6 +5,7 @@ from aws_cdk import (
     aws_apigatewayv2 as apigwv2,
     aws_bedrock as bedrock,
     aws_cloudwatch as cw,
+    aws_codebuild as codebuild,
     aws_iam as iam,
     aws_lambda as lambda_,
 )
@@ -138,6 +139,36 @@ class RuntimeStack(Stack):
             path="/invocations",
             methods=[apigwv2.HttpMethod.POST],
             integration=integration,
+        )
+
+        # --- CI/CD (CodeBuild + GitHub) ---
+        build_project = codebuild.Project(
+            self,
+            "CIBuild",
+            project_name="maritime-risk-agents",
+            source=codebuild.Source.git_hub(
+                owner="en-yao",
+                repo="maritime-risk-agents",
+                webhook=True,
+                webhook_filters=[
+                    codebuild.FilterGroup.in_event_of(
+                        codebuild.EventAction.PUSH,
+                    ).and_branch_is("main"),
+                ],
+            ),
+            environment=codebuild.BuildEnvironment(
+                build_image=codebuild.LinuxBuildImage.STANDARD_7_0,
+                compute_type=codebuild.ComputeType.SMALL,
+            ),
+            build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
+        )
+
+        # Grant CodeBuild permission to deploy CDK stacks
+        build_project.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["sts:AssumeRole"],
+                resources=[f"arn:aws:iam::{self.account}:role/cdk-*"],
+            )
         )
 
         # --- CloudWatch Dashboard ---
