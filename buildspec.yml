@@ -6,7 +6,7 @@ phases:
       nodejs: 18
     commands:
       - pip install uv
-      - uv sync
+      - uv sync --frozen --extra dev
   pre_build:
     commands:
       - uv run ruff check src/
@@ -14,4 +14,4 @@ phases:
       - uv run pytest tests/ -v
   build:
     commands:
-      - cd infra && npx cdk deploy --all --require-approval never
+      - cd infra && npx cdk deploy --all --require-approval never --app "uv run python app.py"
