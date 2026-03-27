@@ -8,6 +8,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Polyfill for amazon-cognito-identity-js (expects Node.js globals)
+      if (typeof global === "undefined") window.global = window;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
