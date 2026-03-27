@@ -1,9 +1,12 @@
 """Export port visit data from Global Fishing Watch for a backtest period.
 
 Usage:
-    uv run python -m eval.export --start 2024-07-01 --end 2024-12-31
+    uv run python -m eval.export --start 2023-10-01 --end 2024-02-28
 
 Requires GFW_API_TOKEN in environment. Free for non-commercial use.
+
+Current period: Oct 2023 - Feb 2024 (Panama Canal drought restrictions).
+Targets vessels transiting Panama Canal during peak drought.
 """
 from __future__ import annotations
 
@@ -97,8 +100,8 @@ async def run_export(start: str, end: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export GFW port visit data")
-    parser.add_argument("--start", default="2024-07-01", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end", default="2024-12-31", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--start", default="2023-10-01", help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--end", default="2024-02-28", help="End date (YYYY-MM-DD)")
     args = parser.parse_args()
 
     asyncio.run(run_export(args.start, args.end))

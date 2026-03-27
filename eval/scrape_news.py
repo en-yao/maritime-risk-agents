@@ -1,10 +1,12 @@
-"""Scrape gCaptain monthly archives for Jul-Dec 2024.
+"""Scrape gCaptain monthly archives for backtest period.
 
 Usage:
     uv run python -m eval.scrape_news
 
 Saves articles to eval/data/news_feed.json for backtest use.
 Simulates the RSS feed the live system subscribes to.
+
+Current period: Oct 2023 - Feb 2024 (Panama Canal drought restrictions).
 """
 from __future__ import annotations
 
