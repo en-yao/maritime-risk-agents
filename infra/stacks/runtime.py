@@ -4,7 +4,6 @@ from aws_cdk import (
     Stack,
     aws_apigatewayv2 as apigwv2,
     aws_bedrock as bedrock,
-    aws_ec2 as ec2,
     aws_iam as iam,
     aws_lambda as lambda_,
 )
@@ -23,35 +22,6 @@ class RuntimeStack(Stack):
         **kwargs: object,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        # --- VPC ---
-        vpc = ec2.Vpc(
-            self,
-            "MaritimeRiskVpc",
-            max_azs=2,
-            nat_gateways=1,
-            subnet_configuration=[
-                ec2.SubnetConfiguration(
-                    name="Private",
-                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
-                    cidr_mask=24,
-                ),
-                ec2.SubnetConfiguration(
-                    name="Public",
-                    subnet_type=ec2.SubnetType.PUBLIC,
-                    cidr_mask=24,
-                ),
-            ],
-        )
-
-        # --- Security Group ---
-        ec2.SecurityGroup(
-            self,
-            "AgentSecurityGroup",
-            vpc=vpc,
-            description="Security group for maritime risk agents",
-            allow_all_outbound=True,
-        )
 
         # --- IAM Role (Bedrock) ---
         agent_role = iam.Role(
