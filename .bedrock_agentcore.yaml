@@ -16,7 +16,7 @@ agents:
       network_configuration:
         network_mode: PUBLIC
       protocol_configuration:
-        server_protocol: HTTP
+        server_protocol: AGUI
       observability:
         enabled: true
     memory:

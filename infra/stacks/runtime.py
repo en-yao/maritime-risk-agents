@@ -1,15 +1,16 @@
 from aws_cdk import (
     CfnOutput,
+    CfnParameter,
     Duration,
     Stack,
-    aws_apigatewayv2 as apigwv2,
     aws_bedrock as bedrock,
+    aws_cloudfront as cf,
+    aws_cloudfront_origins as origins,
     aws_cloudwatch as cw,
     aws_codebuild as codebuild,
+    aws_cognito as cognito,
     aws_iam as iam,
-    aws_lambda as lambda_,
 )
-from aws_cdk.aws_apigatewayv2_integrations import HttpLambdaIntegration
 from constructs import Construct
 
 from stacks.secrets import SecretsStack
@@ -24,6 +25,14 @@ class RuntimeStack(Stack):
         **kwargs: object,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # --- Parameters ---
+        agentcore_endpoint = CfnParameter(
+            self,
+            "AgentCoreEndpoint",
+            default="bedrock-agentcore.ap-southeast-1.amazonaws.com",
+            description="AgentCore Runtime HTTPS endpoint hostname",
+        )
 
         # --- IAM Role (Bedrock) ---
         agent_role = iam.Role(
@@ -97,48 +106,44 @@ class RuntimeStack(Stack):
             ),
         )
 
-        # --- Lambda Proxy (API Gateway → AgentCore Runtime) ---
-        proxy_fn = lambda_.Function(
+        # --- Cognito (JWT auth for browser → AgentCore) ---
+        user_pool = cognito.UserPool(
             self,
-            "AgentCoreProxy",
-            runtime=lambda_.Runtime.PYTHON_3_11,
-            handler="proxy.handler",
-            code=lambda_.Code.from_asset("../infra/lambda"),
-            timeout=Duration.seconds(300),
-            memory_size=256,
-            environment={
-                "AGENT_ARN": f"arn:aws:bedrock-agentcore:{self.region}:{self.account}"
-                ":runtime/PLACEHOLDER",
-            },
-        )
-
-        proxy_fn.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=["bedrock-agentcore:InvokeAgentRuntime"],
-                resources=[
-                    f"arn:aws:bedrock-agentcore:{self.region}:{self.account}:runtime/*",
-                ],
-            )
-        )
-
-        # --- API Gateway HTTP API ---
-        api = apigwv2.HttpApi(
-            self,
-            "AgentApi",
-            api_name="maritime-risk-api",
-            cors_preflight=apigwv2.CorsPreflightOptions(
-                allow_origins=["*"],
-                allow_methods=[apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
-                allow_headers=["Content-Type"],
+            "UserPool",
+            user_pool_name="maritime-risk-users",
+            self_sign_up_enabled=True,
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            standard_attributes=cognito.StandardAttributes(
+                email=cognito.StandardAttribute(required=True, mutable=True),
             ),
+            password_policy=cognito.PasswordPolicy(min_length=8),
         )
 
-        integration = HttpLambdaIntegration("ProxyIntegration", proxy_fn)
+        user_pool_client = user_pool.add_client(
+            "WebClient",
+            user_pool_client_name="maritime-risk-web",
+            auth_flows=cognito.AuthFlow(user_srp=True),
+        )
 
-        api.add_routes(
-            path="/invocations",
-            methods=[apigwv2.HttpMethod.POST],
-            integration=integration,
+        # --- CloudFront (CORS proxy → AgentCore) ---
+        distribution = cf.Distribution(
+            self,
+            "AgentCoreDistribution",
+            default_behavior=cf.BehaviorOptions(
+                origin=origins.HttpOrigin(
+                    agentcore_endpoint.value_as_string,
+                    protocol_policy=cf.OriginProtocolPolicy.HTTPS_ONLY,
+                ),
+                allowed_methods=cf.AllowedMethods.ALLOW_ALL,
+                viewer_protocol_policy=cf.ViewerProtocolPolicy.HTTPS_ONLY,
+                cache_policy=cf.CachePolicy.CACHING_DISABLED,
+                origin_request_policy=cf.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                response_headers_policy=(
+                    cf.ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS_WITH_PREFLIGHT
+                ),
+            ),
+            comment="Maritime Risk AgentCore AG-UI proxy",
         )
 
         # --- CI/CD (CodeBuild + GitHub) ---
@@ -163,7 +168,6 @@ class RuntimeStack(Stack):
             build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
 
-        # Grant CodeBuild permission to deploy CDK stacks
         build_project.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["sts:AssumeRole"],
@@ -178,82 +182,61 @@ class RuntimeStack(Stack):
             dashboard_name="maritime-risk-agents",
         )
 
-        # Lambda proxy metrics
-        dashboard.add_widgets(
-            cw.Row(
-                cw.GraphWidget(
-                    title="Lambda Invocations",
-                    left=[proxy_fn.metric_invocations(period=Duration.minutes(5))],
-                    width=8,
-                ),
-                cw.GraphWidget(
-                    title="Lambda Errors",
-                    left=[proxy_fn.metric_errors(period=Duration.minutes(5))],
-                    width=8,
-                ),
-                cw.GraphWidget(
-                    title="Lambda Duration (p50 / p95)",
-                    left=[
-                        proxy_fn.metric_duration(
-                            statistic="p50", period=Duration.minutes(5),
-                        ),
-                        proxy_fn.metric_duration(
-                            statistic="p95", period=Duration.minutes(5),
-                        ),
-                    ],
-                    width=8,
-                ),
-            ),
-        )
-
-        # API Gateway metrics
-        api_id = api.http_api_id
-        api_4xx = cw.Metric(
-            namespace="AWS/ApiGateway",
-            metric_name="4xx",
-            dimensions_map={"ApiId": api_id},
+        cf_requests = cw.Metric(
+            namespace="AWS/CloudFront",
+            metric_name="Requests",
+            dimensions_map={
+                "DistributionId": distribution.distribution_id,
+                "Region": "Global",
+            },
             period=Duration.minutes(5),
             statistic="Sum",
         )
-        api_5xx = cw.Metric(
-            namespace="AWS/ApiGateway",
-            metric_name="5xx",
-            dimensions_map={"ApiId": api_id},
+        cf_4xx = cw.Metric(
+            namespace="AWS/CloudFront",
+            metric_name="4xxErrorRate",
+            dimensions_map={
+                "DistributionId": distribution.distribution_id,
+                "Region": "Global",
+            },
             period=Duration.minutes(5),
-            statistic="Sum",
+            statistic="Average",
         )
-        api_latency = cw.Metric(
-            namespace="AWS/ApiGateway",
-            metric_name="Latency",
-            dimensions_map={"ApiId": api_id},
+        cf_5xx = cw.Metric(
+            namespace="AWS/CloudFront",
+            metric_name="5xxErrorRate",
+            dimensions_map={
+                "DistributionId": distribution.distribution_id,
+                "Region": "Global",
+            },
             period=Duration.minutes(5),
-            statistic="p95",
+            statistic="Average",
         )
 
         dashboard.add_widgets(
             cw.Row(
                 cw.GraphWidget(
-                    title="API Gateway 4xx / 5xx",
-                    left=[api_4xx],
-                    right=[api_5xx],
-                    width=12,
+                    title="CloudFront Requests",
+                    left=[cf_requests],
+                    width=8,
                 ),
                 cw.GraphWidget(
-                    title="API Gateway Latency (p95)",
-                    left=[api_latency],
-                    width=12,
+                    title="CloudFront 4xx Error Rate",
+                    left=[cf_4xx],
+                    width=8,
+                ),
+                cw.GraphWidget(
+                    title="CloudFront 5xx Error Rate",
+                    left=[cf_5xx],
+                    width=8,
                 ),
             ),
         )
 
         # --- Outputs ---
-        CfnOutput(self, "ApiUrl", value=api.url or "")
-        CfnOutput(
-            self,
-            "ProxyFunctionName",
-            value=proxy_fn.function_name,
-            description="Update AGENT_ARN env var after agentcore launch",
-        )
+        CfnOutput(self, "CloudFrontUrl", value=f"https://{distribution.distribution_domain_name}")
+        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
         CfnOutput(
             self,
             "DashboardUrl",

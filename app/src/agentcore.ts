@@ -8,10 +8,22 @@ export interface AssessmentEvent {
 export async function* streamAssessment(
   prompt: string
 ): AsyncGenerator<AssessmentEvent> {
+  const runInput = {
+    thread_id: crypto.randomUUID(),
+    run_id: crypto.randomUUID(),
+    messages: [{ role: "user", content: prompt }],
+    tools: [],
+    context: [],
+    forwarded_props: {},
+  };
+
   const response = await fetch(`${RUNTIME_URL}/invocations`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(runInput),
   });
 
   if (!response.ok) {
@@ -37,13 +49,21 @@ export async function* streamAssessment(
     buffer = lines.pop() || "";
 
     for (const line of lines) {
-      if (line.trim()) {
-        yield { type: "chunk", data: line };
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+      try {
+        const event = JSON.parse(trimmed.slice(6));
+        if (event.type === "TEXT_MESSAGE_CONTENT") {
+          yield { type: "chunk", data: event.delta };
+        } else if (event.type === "RUN_FINISHED") {
+          yield { type: "complete", data: "" };
+        } else if (event.type === "RUN_ERROR") {
+          yield { type: "error", data: event.message || "Agent error" };
+        }
+      } catch {
+        // Skip malformed SSE lines
       }
     }
-  }
-
-  if (buffer.trim()) {
-    yield { type: "complete", data: buffer };
   }
 }

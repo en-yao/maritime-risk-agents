@@ -1,18 +1,30 @@
 from __future__ import annotations
 
-import json
 import os
 
+import uuid
+from collections.abc import AsyncGenerator
+
 import structlog
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from pydantic import ValidationError
+from ag_ui.core import (
+    EventType,
+    RunAgentInput,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
+)
+from bedrock_agentcore.runtime import AGUIApp
 from strands import Agent
 from strands.hooks import HookProvider
 from strands.models import AnthropicModel
 
 from maritime_risk.agents.news import search_maritime_news
 from maritime_risk.agents.routes import calculate_alternative_route, calculate_route
-from maritime_risk.schemas import ShipmentAssessment
 from maritime_risk.tools.weather import check_weather
 
 logger = structlog.get_logger()
@@ -126,52 +138,107 @@ def create_orchestrator(
     )
 
 
+# --- AG-UI Event Helpers ---
+
+
+def _extract_prompt(run_input: RunAgentInput) -> str:
+    """Extract the last user message text from RunAgentInput."""
+    for msg in reversed(run_input.messages):
+        if hasattr(msg, "role") and msg.role == "user":
+            content = msg.content
+            return content if isinstance(content, str) else ""
+    return ""
+
+
 # --- AgentCore Runtime Entrypoint ---
 
 
-def _build_app() -> BedrockAgentCoreApp:
-    """Build the AgentCore app. Deferred to avoid ddtrace/Starlette conflict."""
-    app = BedrockAgentCoreApp()
+def _build_app() -> AGUIApp:
+    """Build the AgentCore AG-UI app."""
+    app = AGUIApp()
 
     @app.entrypoint
-    def handler(
-        payload: dict[str, str], context: dict[str, str],
-    ) -> dict[str, object]:
-        """Handle incoming AgentCore invocation."""
-        prompt = payload.get("prompt", "")
+    async def handler(run_input: RunAgentInput) -> AsyncGenerator[object, None]:
+        """Stream AG-UI events for a maritime risk assessment."""
+        prompt = _extract_prompt(run_input)
         if not prompt:
-            return {
-                "error": "missing_prompt",
-                "message": "Request must include a 'prompt' field.",
-            }
+            yield RunErrorEvent(
+                type=EventType.RUN_ERROR,
+                message="No user message found in request.",
+                code="INVALID_INPUT",
+            )
+            return
 
+        run_id = str(uuid.uuid4())
+        message_id = str(uuid.uuid4())
         logger.info("assessment_request", prompt_preview=prompt[:80])
+
+        yield RunStartedEvent(
+            type=EventType.RUN_STARTED,
+            thread_id=run_input.thread_id,
+            run_id=run_id,
+        )
+
         agent = create_orchestrator()
-        result = agent(prompt)
+        in_text = False
 
-        # Extract text from agent response
-        raw_message: object = result.message
-        if isinstance(raw_message, dict):
-            for block in raw_message.get("content", []):
-                if isinstance(block, dict) and "text" in block:
-                    raw_message = block["text"]
-                    break
-
-        # Validate against schema if JSON output
         try:
-            text = str(raw_message)
-            json_start = text.find("{")
-            json_end = text.rfind("}") + 1
-            if json_start >= 0 and json_end > json_start:
-                parsed = json.loads(text[json_start:json_end])
-                assessment = ShipmentAssessment.model_validate(parsed)
-                logger.info("assessment_complete", validated=True)
-                return {"assessment": assessment.model_dump()}
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.warning("assessment_validation_failed", error=str(e))
+            async for event in agent.stream_async(prompt):
+                # Text chunks from the model
+                if "data" in event:
+                    text = event["data"]
+                    if isinstance(text, str) and text:
+                        if not in_text:
+                            yield TextMessageStartEvent(
+                                type=EventType.TEXT_MESSAGE_START,
+                                message_id=message_id,
+                                role="assistant",
+                            )
+                            in_text = True
+                        yield TextMessageContentEvent(
+                            type=EventType.TEXT_MESSAGE_CONTENT,
+                            message_id=message_id,
+                            delta=text,
+                        )
 
-        logger.info("assessment_complete", validated=False)
-        return {"assessment": raw_message}
+                # Tool call start
+                elif "tool_use" in event:
+                    tool = event["tool_use"]
+                    yield ToolCallStartEvent(
+                        type=EventType.TOOL_CALL_START,
+                        tool_call_id=str(tool.get("toolUseId", "")),
+                        tool_call_name=str(tool.get("name", "")),
+                    )
+
+                # Tool call result
+                elif "tool_result" in event:
+                    result = event["tool_result"]
+                    yield ToolCallEndEvent(
+                        type=EventType.TOOL_CALL_END,
+                        tool_call_id=str(result.get("toolUseId", "")),
+                    )
+
+            if in_text:
+                yield TextMessageEndEvent(
+                    type=EventType.TEXT_MESSAGE_END,
+                    message_id=message_id,
+                )
+
+        except Exception as e:
+            logger.error("assessment_failed", error=str(e))
+            yield RunErrorEvent(
+                type=EventType.RUN_ERROR,
+                message=str(e),
+                code="AGENT_ERROR",
+            )
+            return
+
+        logger.info("assessment_complete")
+        yield RunFinishedEvent(
+            type=EventType.RUN_FINISHED,
+            thread_id=run_input.thread_id,
+            run_id=run_id,
+        )
 
     return app
 
