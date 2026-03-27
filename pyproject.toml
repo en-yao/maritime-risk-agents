@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy"]
+deploy = ["bedrock-agentcore-starter-toolkit"]
 
 [tool.uv]
 package = true
