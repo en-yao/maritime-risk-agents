@@ -95,7 +95,7 @@ def _get_secret(secret_id: str) -> str:
             "secretsmanager",
             region_name=os.environ.get("AWS_REGION", "ap-southeast-1"),
         )
-        return client.get_secret_value(SecretId=secret_id)["SecretString"]
+        return str(client.get_secret_value(SecretId=secret_id)["SecretString"])
     except Exception as e:
         logger.warning("secret_fetch_failed", secret_id=secret_id, error=str(e))
         return ""

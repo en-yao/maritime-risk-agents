@@ -20,7 +20,9 @@ def _mock_response(status_code: int = 200, data: dict[str, object] | None = None
 
 
 def test_check_weather_no_token() -> None:
-    with patch.dict(os.environ, {"NOAA_TOKEN": ""}, clear=False):
+    env = {"NOAA_TOKEN": "", "AWS_REGION": ""}
+    with patch.dict(os.environ, env, clear=False), \
+         patch.dict("sys.modules", {"boto3": None}):
         raw = check_weather.__wrapped__(31.23, 121.47, "2024-07-15")
 
     result = json.loads(raw)

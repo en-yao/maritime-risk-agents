@@ -47,6 +47,10 @@ module = [
     "anthropic.*",
     "bedrock_agentcore",
     "bedrock_agentcore.*",
+    "boto3",
+    "boto3.*",
+    "botocore",
+    "botocore.*",
     "gfwapiclient",
     "gfwapiclient.*",
 ]

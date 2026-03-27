@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from functools import lru_cache
 from importlib import resources
 
@@ -12,12 +13,12 @@ HOURS_PER_DAY = 24.0
 
 
 @lru_cache(maxsize=1)
-def _load_ports() -> tuple[dict[str, dict[str, object]], dict[str, str]]:
+def _load_ports() -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     """Load port data from searoute's bundled geojson."""
     port_file = resources.files("searoute") / "data" / "ports.geojson"
     data = json.loads(port_file.read_text())
 
-    ports: dict[str, dict[str, object]] = {}
+    ports: dict[str, dict[str, Any]] = {}
     name_index: dict[str, str] = {}
 
     for feature in data["features"]:
