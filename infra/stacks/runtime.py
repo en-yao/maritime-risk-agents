@@ -4,6 +4,7 @@ from aws_cdk import (
     Stack,
     aws_apigatewayv2 as apigwv2,
     aws_bedrock as bedrock,
+    aws_cloudwatch as cw,
     aws_iam as iam,
     aws_lambda as lambda_,
 )
@@ -139,6 +140,81 @@ class RuntimeStack(Stack):
             integration=integration,
         )
 
+        # --- CloudWatch Dashboard ---
+        dashboard = cw.Dashboard(
+            self,
+            "AgentDashboard",
+            dashboard_name="maritime-risk-agents",
+        )
+
+        # Lambda proxy metrics
+        dashboard.add_widgets(
+            cw.Row(
+                cw.GraphWidget(
+                    title="Lambda Invocations",
+                    left=[proxy_fn.metric_invocations(period=Duration.minutes(5))],
+                    width=8,
+                ),
+                cw.GraphWidget(
+                    title="Lambda Errors",
+                    left=[proxy_fn.metric_errors(period=Duration.minutes(5))],
+                    width=8,
+                ),
+                cw.GraphWidget(
+                    title="Lambda Duration (p50 / p95)",
+                    left=[
+                        proxy_fn.metric_duration(
+                            statistic="p50", period=Duration.minutes(5),
+                        ),
+                        proxy_fn.metric_duration(
+                            statistic="p95", period=Duration.minutes(5),
+                        ),
+                    ],
+                    width=8,
+                ),
+            ),
+        )
+
+        # API Gateway metrics
+        api_id = api.http_api_id
+        api_4xx = cw.Metric(
+            namespace="AWS/ApiGateway",
+            metric_name="4xx",
+            dimensions_map={"ApiId": api_id},
+            period=Duration.minutes(5),
+            statistic="Sum",
+        )
+        api_5xx = cw.Metric(
+            namespace="AWS/ApiGateway",
+            metric_name="5xx",
+            dimensions_map={"ApiId": api_id},
+            period=Duration.minutes(5),
+            statistic="Sum",
+        )
+        api_latency = cw.Metric(
+            namespace="AWS/ApiGateway",
+            metric_name="Latency",
+            dimensions_map={"ApiId": api_id},
+            period=Duration.minutes(5),
+            statistic="p95",
+        )
+
+        dashboard.add_widgets(
+            cw.Row(
+                cw.GraphWidget(
+                    title="API Gateway 4xx / 5xx",
+                    left=[api_4xx],
+                    right=[api_5xx],
+                    width=12,
+                ),
+                cw.GraphWidget(
+                    title="API Gateway Latency (p95)",
+                    left=[api_latency],
+                    width=12,
+                ),
+            ),
+        )
+
         # --- Outputs ---
         CfnOutput(self, "ApiUrl", value=api.url or "")
         CfnOutput(
@@ -146,4 +222,10 @@ class RuntimeStack(Stack):
             "ProxyFunctionName",
             value=proxy_fn.function_name,
             description="Update AGENT_ARN env var after agentcore launch",
+        )
+        CfnOutput(
+            self,
+            "DashboardUrl",
+            value=f"https://console.aws.amazon.com/cloudwatch/home"
+            f"?region={self.region}#dashboards:name=maritime-risk-agents",
         )
