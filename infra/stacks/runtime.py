@@ -1,7 +1,6 @@
 from aws_cdk import (
     CfnOutput,
     Stack,
-    aws_bedrock as bedrock,
     aws_codebuild as codebuild,
     aws_cognito as cognito,
     aws_iam as iam,
@@ -47,49 +46,6 @@ class RuntimeStack(Stack):
                     secrets.anthropic_api_key.secret_arn,
                 ],
             )
-        )
-
-        # --- Guardrail ---
-        bedrock.CfnGuardrail(
-            self,
-            "ContentSafetyGuardrail",
-            name="maritime-risk-content-safety",
-            blocked_input_messaging="Request blocked by content safety guardrail.",
-            blocked_outputs_messaging="Response blocked by content safety guardrail.",
-            content_policy_config=bedrock.CfnGuardrail.ContentPolicyConfigProperty(
-                filters_config=[
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="SEXUAL",
-                        input_strength="HIGH",
-                        output_strength="HIGH",
-                    ),
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="HATE",
-                        input_strength="HIGH",
-                        output_strength="HIGH",
-                    ),
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="VIOLENCE",
-                        input_strength="HIGH",
-                        output_strength="HIGH",
-                    ),
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="INSULTS",
-                        input_strength="HIGH",
-                        output_strength="HIGH",
-                    ),
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="MISCONDUCT",
-                        input_strength="HIGH",
-                        output_strength="HIGH",
-                    ),
-                    bedrock.CfnGuardrail.ContentFilterConfigProperty(
-                        type="PROMPT_ATTACK",
-                        input_strength="HIGH",
-                        output_strength="NONE",
-                    ),
-                ],
-            ),
         )
 
         # --- Cognito (JWT auth for browser → AgentCore) ---
