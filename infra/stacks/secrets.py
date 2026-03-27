@@ -20,13 +20,6 @@ class SecretsStack(Stack):
             description="Datadog API key",
         )
 
-        self.marinetraffic_api_key = sm.Secret(
-            self,
-            "MarineTrafficApiKey",
-            secret_name="maritime-risk/marinetraffic-api-key",
-            description="MarineTraffic Essential API key",
-        )
-
         self.anthropic_api_key = sm.Secret(
             self,
             "AnthropicApiKey",
