@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 
 from eval.score import (
-    compute_calibration,
+    _score_structured_output,
+    _score_tool_traces,
     compute_vessel_speeds,
-    extract_confidence,
-    extract_risk_level,
-    load_disruption_labels,
+    has_security_escalation,
+    parse_json_response,
     score_results,
 )
 
@@ -20,8 +20,9 @@ def _make_result(
     departure: str,
     arrival: str,
     agent_response: str,
+    tool_trace: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "shipment": {
             "vessel_id": "test-id",
             "vessel_name": vessel_name,
@@ -34,6 +35,9 @@ def _make_result(
         "prompt": "test prompt",
         "agent_response": agent_response,
     }
+    if tool_trace is not None:
+        result["tool_trace"] = tool_trace
+    return result
 
 
 def _make_assessment_json(
@@ -53,54 +57,35 @@ def _make_assessment_json(
     return json.dumps(assessment)
 
 
-class TestExtractRiskLevel:
-    def test_valid_levels(self) -> None:
-        for level in ("low", "medium", "high"):
-            assert extract_risk_level({"overall_risk": level}) == level
+class TestParseJsonResponse:
+    def test_valid_json(self) -> None:
+        response = 'Here is the assessment: {"overall_risk": "low"} done.'
+        parsed = parse_json_response(response)
+        assert parsed is not None
+        assert parsed["overall_risk"] == "low"
 
-    def test_invalid_level(self) -> None:
-        assert extract_risk_level({"overall_risk": "extreme"}) is None
+    def test_no_json(self) -> None:
+        assert parse_json_response("No JSON here") is None
 
-    def test_none_parsed(self) -> None:
-        assert extract_risk_level(None) is None
-
-
-class TestExtractConfidence:
-    def test_valid_confidence(self) -> None:
-        assert extract_confidence({"confidence": 0.85}) == 0.85
-
-    def test_out_of_range(self) -> None:
-        assert extract_confidence({"confidence": 1.5}) is None
-        assert extract_confidence({"confidence": -0.1}) is None
-
-    def test_none_parsed(self) -> None:
-        assert extract_confidence(None) is None
+    def test_invalid_json(self) -> None:
+        assert parse_json_response("Some text {broken json} more") is None
 
 
-class TestComputeCalibration:
-    def test_empty(self) -> None:
-        result = compute_calibration([])
-        assert result["ece"] is None
+class TestHasSecurityEscalation:
+    def test_escalation_in_leg_risks(self) -> None:
+        parsed: dict[str, object] = {"leg_risks": [{"risk_level": "escalate"}]}
+        assert has_security_escalation("", parsed) is True
 
-    def test_perfect_calibration(self) -> None:
-        # All confident and all correct
-        pairs = [(0.9, True)] * 10
-        result = compute_calibration(pairs, n_bins=5)
-        assert result["ece"] is not None
-        assert result["ece"] < 0.15  # close to 0
+    def test_escalation_in_text(self) -> None:
+        assert has_security_escalation("escalate to security team", None) is True
 
-    def test_poor_calibration(self) -> None:
-        # High confidence but all wrong
-        pairs = [(0.95, False)] * 10
-        result = compute_calibration(pairs, n_bins=5)
-        assert result["ece"] is not None
-        assert result["ece"] > 0.8
+    def test_no_escalation(self) -> None:
+        parsed: dict[str, object] = {"leg_risks": [{"risk_level": "low"}]}
+        assert has_security_escalation("all clear", parsed) is False
 
 
 class TestComputeVesselSpeeds:
     def test_computes_median(self) -> None:
-        # 3 voyages: 480nm in 1 day (20kt), 480nm in 2 days (10kt), 480nm in 1.5 days (~13.3kt)
-        # Median should be ~13.3
         results = [
             _make_result(
                 "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
@@ -120,107 +105,150 @@ class TestComputeVesselSpeeds:
         ]
         speeds = compute_vessel_speeds(results)
         assert "TestVessel" in speeds
-        # Median of 3 values — middle one
         assert speeds["TestVessel"] > 0
 
 
+class TestScoreStructuredOutput:
+    def test_valid_json_with_fields(self) -> None:
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                _make_assessment_json(),
+            ),
+        ]
+        output = _score_structured_output(results)
+        assert output["valid_json"] == 1
+        assert output["has_required_fields"] == 1
+        assert output["schema_compliance_rate"] == 1.0
+
+    def test_no_json(self) -> None:
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                "No structured output here, just text.",
+            ),
+        ]
+        output = _score_structured_output(results)
+        assert output["valid_json"] == 0
+        assert output["schema_compliance_rate"] == 0.0
+
+    def test_json_missing_fields(self) -> None:
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                '{"overall_risk": "low"}',
+            ),
+        ]
+        output = _score_structured_output(results)
+        assert output["valid_json"] == 1
+        assert output["has_required_fields"] == 0
+
+
+class TestScoreToolTraces:
+    def test_complete_traces(self) -> None:
+        traces = [
+            {"tool": "calculate_route", "input": {}, "status": "success",
+             "duration_ms": 100, "error": None},
+            {"tool": "search_maritime_news", "input": {}, "status": "success",
+             "duration_ms": 200, "error": None},
+            {"tool": "check_weather", "input": {}, "status": "success",
+             "duration_ms": 150, "error": None},
+        ]
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                _make_assessment_json(), tool_trace=traces,
+            ),
+        ]
+        usage = _score_tool_traces(results)
+        assert usage["traced_runs"] == 1
+        assert usage["total_tool_calls"] == 3
+        assert usage["tool_errors"] == 0
+        assert usage["required_tool_coverage"] == 1.0
+
+    def test_missing_required_tool(self) -> None:
+        traces = [
+            {"tool": "calculate_route", "input": {}, "status": "success",
+             "duration_ms": 100, "error": None},
+        ]
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                _make_assessment_json(), tool_trace=traces,
+            ),
+        ]
+        usage = _score_tool_traces(results)
+        assert usage["runs_missing_required_tools"] == 1
+        assert usage["required_tool_coverage"] == 0.0
+
+    def test_tool_error(self) -> None:
+        traces = [
+            {"tool": "check_weather", "input": {}, "status": "error",
+             "duration_ms": 50, "error": "timeout"},
+        ]
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                _make_assessment_json(), tool_trace=traces,
+            ),
+        ]
+        usage = _score_tool_traces(results)
+        assert usage["tool_errors"] == 1
+
+    def test_no_traces(self) -> None:
+        results = [
+            _make_result(
+                "V", "lat=0 lon=0", "lat=0 lon=10",
+                "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+                _make_assessment_json(),
+            ),
+        ]
+        usage = _score_tool_traces(results)
+        assert usage["traced_runs"] == 0
+
+
 class TestScoreResults:
-    def test_risk_classification_false_alarm(self) -> None:
-        """Agent says high risk but vessel arrives on time → false alarm."""
-        # Two identical voyages to establish vessel speed baseline
-        base_result = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
-            _make_assessment_json(risk="low", confidence=0.9),
-        )
-        # Third voyage: same speed (no delay) but agent says high risk
-        false_alarm_result = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-03 00:00:00+00:00", "2024-01-04 00:00:00+00:00",
-            _make_assessment_json(risk="high", delay=5, confidence=0.9),
-        )
-        results = [base_result, base_result, false_alarm_result]
-        summary = score_results(results)
-
-        classification = summary["risk_classification"]
-        assert isinstance(classification, dict)
-        assert classification["false_alarms"] >= 1
-
-    def test_confidence_calibration_present(self) -> None:
-        result = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
-            _make_assessment_json(risk="low", confidence=0.95),
-        )
-        summary = score_results([result, result, result])
-
-        calibration = summary["confidence_calibration"]
-        assert isinstance(calibration, dict)
-        assert "ece" in calibration
-
-    def test_vessel_speeds_in_summary(self) -> None:
+    def test_basic_summary(self) -> None:
         result = _make_result(
             "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
             "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
             _make_assessment_json(),
         )
         summary = score_results([result])
+        assert summary["total_shipments"] == 1
+        assert summary["successful_runs"] == 1
+        assert summary["task_completion_rate"] == 1.0
         assert "vessel_speeds_knots" in summary
+        assert "structured_output" in summary
+        assert "tool_usage" in summary
 
-    def test_detectable_disruptions_with_labels(self) -> None:
-        """Detectable-only recall excludes undetectable disruptions."""
-        # 5 normal voyages to establish a stable median speed (~1 day transit)
-        base = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
+    def test_security_escalation_counted(self) -> None:
+        escalated = _make_result(
+            "V", "lat=0 lon=0", "lat=0 lon=10",
             "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
-            _make_assessment_json(risk="low", confidence=0.9),
+            '{"leg_risks": [{"risk_level": "escalate"}]}',
         )
-        # Shipment 5: very delayed (5 days for a 1-day route), detectable, agent missed
-        missed_detectable = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-10 00:00:00+00:00", "2024-01-15 00:00:00+00:00",
-            _make_assessment_json(risk="low", confidence=0.9),
-        )
-        # Shipment 6: very delayed (5 days for a 1-day route), undetectable, agent missed
-        missed_undetectable = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-16 00:00:00+00:00", "2024-01-21 00:00:00+00:00",
-            _make_assessment_json(risk="low", confidence=0.9),
-        )
-        results = [base, base, base, base, base, missed_detectable, missed_undetectable]
-        labels = {
-            5: {"shipment_idx": 5, "detectable": True, "actually_disrupted": True,
-                "cause": "test", "evidence": "test", "news_dates": []},
-            6: {"shipment_idx": 6, "detectable": False, "actually_disrupted": True,
-                "cause": "unknown", "evidence": "none", "news_dates": []},
-        }
-        summary = score_results(results, labels=labels)
-
-        det = summary["detectable_disruptions"]
-        assert isinstance(det, dict)
-        assert det["detected"] == 0
-        assert det["missed"] == 1
-        assert det["undetectable"] == 1
-        assert det["recall"] == 0.0
-
-    def test_detectable_disruptions_without_labels(self) -> None:
-        """Without labels, detectable_disruptions section shows unlabeled state."""
-        result = _make_result(
-            "TestVessel", "lat=0 lon=0", "lat=0 lon=10",
-            "2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00",
+        normal = _make_result(
+            "V", "lat=0 lon=0", "lat=0 lon=10",
+            "2024-01-03 00:00:00+00:00", "2024-01-04 00:00:00+00:00",
             _make_assessment_json(),
         )
-        summary = score_results([result], labels={})
+        summary = score_results([escalated, normal])
+        assert summary["security_escalations"] == 1
 
-        det = summary["detectable_disruptions"]
-        assert isinstance(det, dict)
-        assert det["labeled"] is False
-
-
-class TestLoadDisruptionLabels:
-    def test_loads_from_file(self) -> None:
-        labels = load_disruption_labels()
-        assert len(labels) == 9
-        assert 4 in labels
-        assert labels[4]["detectable"] is True
-        assert labels[8]["detectable"] is False
+    def test_error_result(self) -> None:
+        error_result: dict[str, object] = {
+            "shipment": {},
+            "prompt": "test",
+            "error": "something failed",
+            "tool_trace": [],
+        }
+        summary = score_results([error_result])
+        assert summary["errors"] == 1
+        assert summary["successful_runs"] == 0
