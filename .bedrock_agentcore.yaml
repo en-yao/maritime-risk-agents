@@ -32,7 +32,7 @@ agents:
     bedrock_agentcore:
       agent_id: maritime_risk-t5abDX7vOS
       agent_arn: arn:aws:bedrock-agentcore:ap-southeast-1:813003568911:runtime/maritime_risk-t5abDX7vOS
-      agent_session_id: null
+      agent_session_id: f48140b9-621f-48ba-8898-1156470b7fc5
     codebuild:
       project_name: bedrock-agentcore-maritime_risk-builder
       execution_role: arn:aws:iam::813003568911:role/AmazonBedrockAgentCoreSDKCodeBuild-ap-southeast-1-943c0971f7

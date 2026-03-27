@@ -10,3 +10,7 @@ dist/
 eval/data/
 node_modules/
 app/dist/
+infra/cdk.out/
+app/dist.zip
+infra/lambda/proxy.zip
+infra/outputs.json
