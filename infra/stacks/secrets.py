@@ -26,3 +26,10 @@ class SecretsStack(Stack):
             secret_name="maritime-risk/marinetraffic-api-key",
             description="MarineTraffic Essential API key",
         )
+
+        self.anthropic_api_key = sm.Secret(
+            self,
+            "AnthropicApiKey",
+            secret_name="maritime-risk/anthropic-api-key",
+            description="Anthropic API key for Claude model access",
+        )

@@ -73,6 +73,7 @@ class RuntimeStack(Stack):
                     secrets.noaa_token.secret_arn,
                     secrets.dd_api_key.secret_arn,
                     secrets.marinetraffic_api_key.secret_arn,
+                    secrets.anthropic_api_key.secret_arn,
                 ],
             )
         )
