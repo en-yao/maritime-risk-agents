@@ -61,7 +61,10 @@ a risk level). Use evidence from news and weather to justify the estimate. \
 Do not estimate delays from security threats — those are out of scope.
 5. If ANY leg has operational disruption signals, ALWAYS call \
 calculate_alternative_route for comparison — even if you ultimately \
-recommend proceeding. Show the transit time delta so the user can decide.
+recommend proceeding. Show the transit time delta so the user can decide. \
+Only recommend rerouting if the predicted delay exceeds the alternative \
+route's transit time delta. Otherwise recommend proceeding and cite the \
+comparison.
 6. Output a structured assessment as JSON with this format:
 {
   "shipment_id": "<vessel_name>_<departure_date>",
