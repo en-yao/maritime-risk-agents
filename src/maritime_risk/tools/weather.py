@@ -20,6 +20,17 @@ def check_weather(lat: float, lon: float, date: str) -> str:
     """
     token = os.environ.get("NOAA_TOKEN", "")
     if not token:
+        try:
+            import boto3
+
+            sm = boto3.client(
+                "secretsmanager",
+                region_name=os.environ.get("AWS_REGION", "ap-southeast-1"),
+            )
+            token = sm.get_secret_value(SecretId="maritime-risk/noaa-token")["SecretString"]
+        except Exception:
+            pass
+    if not token:
         return json.dumps({"error": "NOAA_TOKEN not configured"})
 
     extent = f"{lat - 2},{lon - 2},{lat + 2},{lon + 2}"

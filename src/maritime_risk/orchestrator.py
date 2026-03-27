@@ -81,8 +81,33 @@ explicitly. Cite evidence for every factor.\
 """
 
 
+def _get_secret(secret_id: str) -> str:
+    """Fetch secret from AWS Secrets Manager. Falls back to env var."""
+    env_key = secret_id.rsplit("/", 1)[-1].upper().replace("-", "_")
+    env_val = os.environ.get(env_key, "")
+    if env_val:
+        return env_val
+
+    try:
+        import boto3
+
+        client = boto3.client(
+            "secretsmanager",
+            region_name=os.environ.get("AWS_REGION", "ap-southeast-1"),
+        )
+        return client.get_secret_value(SecretId=secret_id)["SecretString"]
+    except Exception as e:
+        logger.warning("secret_fetch_failed", secret_id=secret_id, error=str(e))
+        return ""
+
+
 def _create_model() -> AnthropicModel:
     """Create Anthropic model."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        api_key = _get_secret("maritime-risk/anthropic-api-key")
+        if api_key:
+            os.environ["ANTHROPIC_API_KEY"] = api_key
+
     return AnthropicModel(
         model_id=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"),
         max_tokens=int(os.environ.get("ANTHROPIC_MAX_TOKENS", "2048")),
