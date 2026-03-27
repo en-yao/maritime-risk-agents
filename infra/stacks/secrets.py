@@ -13,13 +13,6 @@ class SecretsStack(Stack):
             description="NOAA CDO API token",
         )
 
-        self.dd_api_key = sm.Secret(
-            self,
-            "DatadogApiKey",
-            secret_name="maritime-risk/dd-api-key",
-            description="Datadog API key",
-        )
-
         self.anthropic_api_key = sm.Secret(
             self,
             "AnthropicApiKey",
