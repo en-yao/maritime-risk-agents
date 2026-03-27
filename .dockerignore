@@ -1,0 +1,12 @@
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+app/node_modules/
+app/dist/
+infra/cdk.out/
+infra/node_modules/
+eval/data/results/
+eval/data/news_feed.json
+eval/data/port_visits.json

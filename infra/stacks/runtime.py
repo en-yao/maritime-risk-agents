@@ -40,7 +40,7 @@ class RuntimeStack(Stack):
         )
 
         # --- Security Group ---
-        agent_sg = ec2.SecurityGroup(
+        ec2.SecurityGroup(
             self,
             "AgentSecurityGroup",
             vpc=vpc,
